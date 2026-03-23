@@ -3,12 +3,22 @@ import Table from "cli-table3";
 import {
   createSessionEncoder,
   decode,
+  decodeDirect,
+  decodeToCompactJson,
   decodeToTransportJson,
   encode,
   encodeBatch,
+  encodeBatchCompact,
+  encodeBatchCompactJson,
+  encodeBatchDirect,
   encodeBatchTransportJson,
+  encodeCompact,
+  encodeCompactJson,
+  encodeDirect,
   encodeTransportJson,
   init,
+  toCompactJson,
+  toCompactJsonBatch,
   toTransportJson,
   toTransportJsonBatch,
   type GoweValue,
@@ -162,6 +172,8 @@ async function run(): Promise<void> {
   const goweEncodedSingles = batchRecords.map((value) => encode(value));
   const goweTransportSingle = toTransportJson(singleRecord);
   const goweTransportBatch = toTransportJsonBatch(batchRecords);
+  const goweCompactSingle = toCompactJson(singleRecord);
+  const goweCompactBatch = toCompactJsonBatch(batchRecords);
   const goweEncodedSingleRaw = encodeTransportJson(goweTransportSingle);
   const jsonEncodedSingle = toJsonBytes(singleRecordJson);
   const jsonEncodedBatch = toJsonBytes(batchRecordsJson);
@@ -179,6 +191,18 @@ async function run(): Promise<void> {
     enableTemplateBatch: true,
   });
   rawSessionEncoder.encodeTransportJson(goweTransportSingle);
+
+  const directSessionEncoder = createSessionEncoder({
+    enableStatePatch: true,
+    enableTemplateBatch: true,
+  });
+  directSessionEncoder.encodeDirect(singleRecord);
+
+  const compactSessionEncoder = createSessionEncoder({
+    enableStatePatch: true,
+    enableTemplateBatch: true,
+  });
+  compactSessionEncoder.encodeCompact(singleRecord);
 
   const patchA: GoweValue = {
     ...singleRecord,
@@ -202,9 +226,14 @@ async function run(): Promise<void> {
 
   const patchATransport = toTransportJson(patchA);
   const patchBTransport = toTransportJson(patchB);
+  const patchACompact = toCompactJson(patchA);
+  const patchBCompact = toCompactJson(patchB);
 
   let patchFlip = false;
   let patchFlipRaw = false;
+  let patchFlipDirect = false;
+  let patchFlipCompact = false;
+  let patchFlipCompactRaw = false;
 
   const bench = new Bench({
     time: options.timeMs,
@@ -213,19 +242,61 @@ async function run(): Promise<void> {
 
   if (options.mode === "max") {
     bench
-      .add("gowe encode single raw", () => {
+      .add("gowe encode single (direct)", () => {
+        encodeDirect(singleRecord);
+      })
+      .add("gowe encode single (raw json)", () => {
         encodeTransportJson(goweTransportSingle);
       })
-      .add("gowe decode transport raw", () => {
+      .add("gowe encode single (compact)", () => {
+        encodeCompact(singleRecord);
+      })
+      .add("gowe encode single (compact raw)", () => {
+        encodeCompactJson(goweCompactSingle);
+      })
+      .add("gowe decode single (direct)", () => {
+        decodeDirect(goweEncodedSingleRaw);
+      })
+      .add("gowe decode single (raw json)", () => {
         decodeToTransportJson(goweEncodedSingleRaw);
       })
-      .add("gowe encode batch256 raw", () => {
+      .add("gowe decode single (compact raw)", () => {
+        decodeToCompactJson(goweEncodedSingleRaw);
+      })
+      .add("gowe encode batch256 (direct)", () => {
+        encodeBatchDirect(batchRecords);
+      })
+      .add("gowe encode batch256 (raw json)", () => {
         encodeBatchTransportJson(goweTransportBatch);
       })
-      .add("gowe patch session raw", () => {
+      .add("gowe encode batch256 (compact)", () => {
+        encodeBatchCompact(batchRecords);
+      })
+      .add("gowe encode batch256 (compact raw)", () => {
+        encodeBatchCompactJson(goweCompactBatch);
+      })
+      .add("gowe patch session (direct)", () => {
+        patchFlipDirect = !patchFlipDirect;
+        directSessionEncoder.encodePatchDirect(
+          patchFlipDirect ? patchA : patchB,
+        );
+      })
+      .add("gowe patch session (raw json)", () => {
         patchFlipRaw = !patchFlipRaw;
         rawSessionEncoder.encodePatchTransportJson(
           patchFlipRaw ? patchATransport : patchBTransport,
+        );
+      })
+      .add("gowe patch session (compact)", () => {
+        patchFlipCompact = !patchFlipCompact;
+        compactSessionEncoder.encodePatchCompact(
+          patchFlipCompact ? patchA : patchB,
+        );
+      })
+      .add("gowe patch session (compact raw)", () => {
+        patchFlipCompactRaw = !patchFlipCompactRaw;
+        compactSessionEncoder.encodePatchCompactJson(
+          patchFlipCompactRaw ? patchACompact : patchBCompact,
         );
       });
   } else {
@@ -233,20 +304,44 @@ async function run(): Promise<void> {
       .add("gowe encode single", () => {
         encode(singleRecord);
       })
-      .add("gowe encode single raw", () => {
+      .add("gowe encode single (direct)", () => {
+        encodeDirect(singleRecord);
+      })
+      .add("gowe encode single (raw json)", () => {
         encodeTransportJson(goweTransportSingle);
+      })
+      .add("gowe encode single (compact)", () => {
+        encodeCompact(singleRecord);
+      })
+      .add("gowe encode single (compact raw)", () => {
+        encodeCompactJson(goweCompactSingle);
       })
       .add("gowe decode single", () => {
         decode(goweEncodedSingle);
       })
-      .add("gowe decode transport raw", () => {
+      .add("gowe decode single (direct)", () => {
+        decodeDirect(goweEncodedSingleRaw);
+      })
+      .add("gowe decode single (raw json)", () => {
         decodeToTransportJson(goweEncodedSingleRaw);
+      })
+      .add("gowe decode single (compact raw)", () => {
+        decodeToCompactJson(goweEncodedSingleRaw);
       })
       .add("gowe encode batch256", () => {
         encodeBatch(batchRecords);
       })
-      .add("gowe encode batch256 raw", () => {
+      .add("gowe encode batch256 (direct)", () => {
+        encodeBatchDirect(batchRecords);
+      })
+      .add("gowe encode batch256 (raw json)", () => {
         encodeBatchTransportJson(goweTransportBatch);
+      })
+      .add("gowe encode batch256 (compact)", () => {
+        encodeBatchCompact(batchRecords);
+      })
+      .add("gowe encode batch256 (compact raw)", () => {
+        encodeBatchCompactJson(goweCompactBatch);
       })
       .add("gowe decode 256 singles", () => {
         for (const encoded of goweEncodedSingles) {
@@ -257,10 +352,28 @@ async function run(): Promise<void> {
         patchFlip = !patchFlip;
         sessionEncoder.encodePatch(patchFlip ? patchA : patchB);
       })
-      .add("gowe patch session raw", () => {
+      .add("gowe patch session (direct)", () => {
+        patchFlipDirect = !patchFlipDirect;
+        directSessionEncoder.encodePatchDirect(
+          patchFlipDirect ? patchA : patchB,
+        );
+      })
+      .add("gowe patch session (raw json)", () => {
         patchFlipRaw = !patchFlipRaw;
         rawSessionEncoder.encodePatchTransportJson(
           patchFlipRaw ? patchATransport : patchBTransport,
+        );
+      })
+      .add("gowe patch session (compact)", () => {
+        patchFlipCompact = !patchFlipCompact;
+        compactSessionEncoder.encodePatchCompact(
+          patchFlipCompact ? patchA : patchB,
+        );
+      })
+      .add("gowe patch session (compact raw)", () => {
+        patchFlipCompactRaw = !patchFlipCompactRaw;
+        compactSessionEncoder.encodePatchCompactJson(
+          patchFlipCompactRaw ? patchACompact : patchBCompact,
         );
       })
       .add("json stringify batch", () => {
