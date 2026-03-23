@@ -3,18 +3,25 @@ import Table from "cli-table3";
 import {
   createSessionEncoder,
   decode,
+  decodeToTransportJson,
   encode,
   encodeBatch,
+  encodeBatchTransportJson,
+  encodeTransportJson,
   init,
+  toTransportJson,
+  toTransportJsonBatch,
   type GoweValue,
 } from "gowe";
 
 type BackendKind = "napi" | "wasm";
+type BenchMode = "full" | "max";
 
 interface CliOptions {
   backend: BackendKind;
   timeMs: number;
   warmupMs: number;
+  mode: BenchMode;
 }
 
 function parseCliOptions(argv: string[]): CliOptions {
@@ -22,6 +29,7 @@ function parseCliOptions(argv: string[]): CliOptions {
     backend: "napi",
     timeMs: 1000,
     warmupMs: 250,
+    mode: "full",
   };
 
   const options = { ...defaults };
@@ -50,6 +58,15 @@ function parseCliOptions(argv: string[]): CliOptions {
       const parsed = Number(argv[i + 1]);
       if (Number.isFinite(parsed) && parsed >= 0) {
         options.warmupMs = parsed;
+      }
+      i += 1;
+      continue;
+    }
+
+    if (arg === "--mode" && argv[i + 1]) {
+      const mode = argv[i + 1];
+      if (mode === "full" || mode === "max") {
+        options.mode = mode;
       }
       i += 1;
     }
@@ -143,6 +160,9 @@ async function run(): Promise<void> {
   const goweEncodedSingle = encode(singleRecord);
   const goweEncodedBatch = encodeBatch(batchRecords);
   const goweEncodedSingles = batchRecords.map((value) => encode(value));
+  const goweTransportSingle = toTransportJson(singleRecord);
+  const goweTransportBatch = toTransportJsonBatch(batchRecords);
+  const goweEncodedSingleRaw = encodeTransportJson(goweTransportSingle);
   const jsonEncodedSingle = toJsonBytes(singleRecordJson);
   const jsonEncodedBatch = toJsonBytes(batchRecordsJson);
   const jsonSingleText = new TextDecoder().decode(jsonEncodedSingle);
@@ -153,6 +173,12 @@ async function run(): Promise<void> {
     enableTemplateBatch: true,
   });
   sessionEncoder.encode(singleRecord);
+
+  const rawSessionEncoder = createSessionEncoder({
+    enableStatePatch: true,
+    enableTemplateBatch: true,
+  });
+  rawSessionEncoder.encodeTransportJson(goweTransportSingle);
 
   const patchA: GoweValue = {
     ...singleRecord,
@@ -174,44 +200,82 @@ async function run(): Promise<void> {
     },
   };
 
+  const patchATransport = toTransportJson(patchA);
+  const patchBTransport = toTransportJson(patchB);
+
   let patchFlip = false;
+  let patchFlipRaw = false;
 
   const bench = new Bench({
     time: options.timeMs,
     warmupTime: options.warmupMs,
   });
 
-  bench
-    .add("gowe encode single", () => {
-      encode(singleRecord);
-    })
-    .add("gowe decode single", () => {
-      decode(goweEncodedSingle);
-    })
-    .add("gowe encode batch", () => {
-      encodeBatch(batchRecords);
-    })
-    .add("gowe decode 256 singles", () => {
-      for (const encoded of goweEncodedSingles) {
-        decode(encoded);
-      }
-    })
-    .add("gowe session encodePatch", () => {
-      patchFlip = !patchFlip;
-      sessionEncoder.encodePatch(patchFlip ? patchA : patchB);
-    })
-    .add("json stringify batch", () => {
-      JSON.stringify(batchRecordsJson);
-    })
-    .add("json parse batch", () => {
-      JSON.parse(jsonBatchText);
-    })
-    .add("json stringify single", () => {
-      JSON.stringify(singleRecordJson);
-    })
-    .add("json parse single", () => {
-      JSON.parse(jsonSingleText);
-    });
+  if (options.mode === "max") {
+    bench
+      .add("gowe encode single raw", () => {
+        encodeTransportJson(goweTransportSingle);
+      })
+      .add("gowe decode transport raw", () => {
+        decodeToTransportJson(goweEncodedSingleRaw);
+      })
+      .add("gowe encode batch256 raw", () => {
+        encodeBatchTransportJson(goweTransportBatch);
+      })
+      .add("gowe patch session raw", () => {
+        patchFlipRaw = !patchFlipRaw;
+        rawSessionEncoder.encodePatchTransportJson(
+          patchFlipRaw ? patchATransport : patchBTransport,
+        );
+      });
+  } else {
+    bench
+      .add("gowe encode single", () => {
+        encode(singleRecord);
+      })
+      .add("gowe encode single raw", () => {
+        encodeTransportJson(goweTransportSingle);
+      })
+      .add("gowe decode single", () => {
+        decode(goweEncodedSingle);
+      })
+      .add("gowe decode transport raw", () => {
+        decodeToTransportJson(goweEncodedSingleRaw);
+      })
+      .add("gowe encode batch256", () => {
+        encodeBatch(batchRecords);
+      })
+      .add("gowe encode batch256 raw", () => {
+        encodeBatchTransportJson(goweTransportBatch);
+      })
+      .add("gowe decode 256 singles", () => {
+        for (const encoded of goweEncodedSingles) {
+          decode(encoded);
+        }
+      })
+      .add("gowe patch session", () => {
+        patchFlip = !patchFlip;
+        sessionEncoder.encodePatch(patchFlip ? patchA : patchB);
+      })
+      .add("gowe patch session raw", () => {
+        patchFlipRaw = !patchFlipRaw;
+        rawSessionEncoder.encodePatchTransportJson(
+          patchFlipRaw ? patchATransport : patchBTransport,
+        );
+      })
+      .add("json stringify batch", () => {
+        JSON.stringify(batchRecordsJson);
+      })
+      .add("json parse batch", () => {
+        JSON.parse(jsonBatchText);
+      })
+      .add("json stringify single", () => {
+        JSON.stringify(singleRecordJson);
+      })
+      .add("json parse single", () => {
+        JSON.parse(jsonSingleText);
+      });
+  }
 
   await bench.run();
 
@@ -274,6 +338,7 @@ async function run(): Promise<void> {
   console.log("Gowe benchmark");
   console.log(`runtime: ${runtime}`);
   console.log(`backend preference: ${options.backend}`);
+  console.log(`mode: ${options.mode}`);
   console.log(`time per task: ${options.timeMs} ms`);
   console.log(`warmup per task: ${options.warmupMs} ms`);
   console.log("");
