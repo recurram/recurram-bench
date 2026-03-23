@@ -18,6 +18,7 @@ pnpm --dir ../gowe-js build
 
 ```bash
 pnpm bench
+pnpm bench:msgpack
 pnpm bench:max
 ```
 
@@ -27,11 +28,13 @@ Optional flags:
 - `--time-ms <number>` (default: `1000`)
 - `--warmup-ms <number>` (default: `250`)
 - `--mode full|max` (default: `full`)
+- `--gowe-vs-msgpack-only` (hide JSON rows and JSON benchmark tasks)
 
 Examples:
 
 ```bash
 pnpm bench -- --backend napi
+pnpm bench -- --gowe-vs-msgpack-only
 pnpm bench -- --mode max --backend napi
 pnpm bench -- --backend wasm --time-ms 2000 --warmup-ms 500
 ```
@@ -40,10 +43,11 @@ pnpm bench -- --backend wasm --time-ms 2000 --warmup-ms 500
 
 - Gowe encode/decode for a single record
 - Gowe encode/decode for a 256-record batch
+- MessagePack encode/decode baselines for single and batched payloads
 - Gowe session patch encode (`encodePatch`)
 - Raw transport-json fast path (`encodeTransportJson`, `encodeBatchTransportJson`, `decodeToTransportJson`)
 - JSON stringify/parse baseline for a comparable payload
-- Encoded payload size comparison (`gowe` vs JSON)
+- Encoded payload size comparison (`gowe` vs MessagePack vs JSON)
 - Pretty CLI tables for size and throughput output (`cli-table3`)
 
 ## Max speed tips

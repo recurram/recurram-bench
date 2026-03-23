@@ -1,6 +1,10 @@
 import { Bench } from "tinybench";
 import Table from "cli-table3";
 import {
+  decode as decodeMsgpack,
+  encode as encodeMsgpack,
+} from "@msgpack/msgpack";
+import {
   createSessionEncoder,
   decode,
   decodeDirect,
@@ -32,6 +36,7 @@ interface CliOptions {
   timeMs: number;
   warmupMs: number;
   mode: BenchMode;
+  goweVsMsgpackOnly: boolean;
 }
 
 function parseCliOptions(argv: string[]): CliOptions {
@@ -40,6 +45,7 @@ function parseCliOptions(argv: string[]): CliOptions {
     timeMs: 1000,
     warmupMs: 250,
     mode: "full",
+    goweVsMsgpackOnly: false,
   };
 
   const options = { ...defaults };
@@ -79,6 +85,11 @@ function parseCliOptions(argv: string[]): CliOptions {
         options.mode = mode;
       }
       i += 1;
+      continue;
+    }
+
+    if (arg === "--gowe-vs-msgpack-only") {
+      options.goweVsMsgpackOnly = true;
     }
   }
 
@@ -106,6 +117,14 @@ function formatPercent(value: number): string {
   return `${value.toFixed(2)}%`;
 }
 
+function formatReduction(smaller: number, larger: number): string {
+  if (smaller <= 0 || larger <= 0) {
+    return "n/a";
+  }
+
+  return formatPercent((1 - smaller / larger) * 100);
+}
+
 function formatRelativeSpeed(hz: number, fastestHz: number): string {
   if (hz <= 0 || fastestHz <= 0) {
     return "n/a";
@@ -121,6 +140,7 @@ function toJsonBytes(value: unknown): Uint8Array {
 async function run(): Promise<void> {
   const options = parseCliOptions(process.argv.slice(2));
   const runtime = await init({ prefer: options.backend });
+  const includeJsonBaseline = !options.goweVsMsgpackOnly;
 
   const singleRecord: GoweValue = {
     id: 1234,
@@ -177,6 +197,11 @@ async function run(): Promise<void> {
   const goweEncodedSingleRaw = encodeTransportJson(goweTransportSingle);
   const jsonEncodedSingle = toJsonBytes(singleRecordJson);
   const jsonEncodedBatch = toJsonBytes(batchRecordsJson);
+  const msgpackEncodedSingle = encodeMsgpack(singleRecordJson);
+  const msgpackEncodedBatch = encodeMsgpack(batchRecordsJson);
+  const msgpackEncodedSingles = batchRecordsJson.map((value) =>
+    encodeMsgpack(value),
+  );
   const jsonSingleText = new TextDecoder().decode(jsonEncodedSingle);
   const jsonBatchText = new TextDecoder().decode(jsonEncodedBatch);
 
@@ -263,6 +288,12 @@ async function run(): Promise<void> {
       .add("gowe decode single (compact raw)", () => {
         decodeToCompactJson(goweEncodedSingleRaw);
       })
+      .add("msgpack encode single", () => {
+        encodeMsgpack(singleRecordJson);
+      })
+      .add("msgpack decode single", () => {
+        decodeMsgpack(msgpackEncodedSingle);
+      })
       .add("gowe encode batch256 (direct)", () => {
         encodeBatchDirect(batchRecords);
       })
@@ -274,6 +305,14 @@ async function run(): Promise<void> {
       })
       .add("gowe encode batch256 (compact raw)", () => {
         encodeBatchCompactJson(goweCompactBatch);
+      })
+      .add("msgpack encode batch256", () => {
+        encodeMsgpack(batchRecordsJson);
+      })
+      .add("msgpack decode 256 singles", () => {
+        for (const encoded of msgpackEncodedSingles) {
+          decodeMsgpack(encoded);
+        }
       })
       .add("gowe patch session (direct)", () => {
         patchFlipDirect = !patchFlipDirect;
@@ -328,6 +367,12 @@ async function run(): Promise<void> {
       .add("gowe decode single (compact raw)", () => {
         decodeToCompactJson(goweEncodedSingleRaw);
       })
+      .add("msgpack encode single", () => {
+        encodeMsgpack(singleRecordJson);
+      })
+      .add("msgpack decode single", () => {
+        decodeMsgpack(msgpackEncodedSingle);
+      })
       .add("gowe encode batch256", () => {
         encodeBatch(batchRecords);
       })
@@ -346,6 +391,14 @@ async function run(): Promise<void> {
       .add("gowe decode 256 singles", () => {
         for (const encoded of goweEncodedSingles) {
           decode(encoded);
+        }
+      })
+      .add("msgpack encode batch256", () => {
+        encodeMsgpack(batchRecordsJson);
+      })
+      .add("msgpack decode 256 singles", () => {
+        for (const encoded of msgpackEncodedSingles) {
+          decodeMsgpack(encoded);
         }
       })
       .add("gowe patch session", () => {
@@ -375,25 +428,41 @@ async function run(): Promise<void> {
         compactSessionEncoder.encodePatchCompactJson(
           patchFlipCompactRaw ? patchACompact : patchBCompact,
         );
-      })
-      .add("json stringify batch", () => {
-        JSON.stringify(batchRecordsJson);
-      })
-      .add("json parse batch", () => {
-        JSON.parse(jsonBatchText);
-      })
-      .add("json stringify single", () => {
-        JSON.stringify(singleRecordJson);
-      })
-      .add("json parse single", () => {
-        JSON.parse(jsonSingleText);
       });
+
+    if (includeJsonBaseline) {
+      bench
+        .add("json stringify batch", () => {
+          JSON.stringify(batchRecordsJson);
+        })
+        .add("json parse batch", () => {
+          JSON.parse(jsonBatchText);
+        })
+        .add("json stringify single", () => {
+          JSON.stringify(singleRecordJson);
+        })
+        .add("json parse single", () => {
+          JSON.parse(jsonSingleText);
+        });
+    }
   }
 
   await bench.run();
 
+  const sizeTableHead = ["payload", "gowe (bytes)", "msgpack (bytes)"];
+
+  if (includeJsonBaseline) {
+    sizeTableHead.push("json (bytes)");
+  }
+
+  sizeTableHead.push("vs msgpack");
+
+  if (includeJsonBaseline) {
+    sizeTableHead.push("vs json");
+  }
+
   const sizeTable = new Table({
-    head: ["payload", "gowe (bytes)", "json (bytes)", "size reduction"],
+    head: sizeTableHead,
     style: { head: [], border: [] },
   });
 
@@ -401,23 +470,35 @@ async function run(): Promise<void> {
     {
       payload: "single",
       gowe: goweEncodedSingle.byteLength,
+      msgpack: msgpackEncodedSingle.byteLength,
       json: jsonEncodedSingle.byteLength,
     },
     {
       payload: "batch(256)",
       gowe: goweEncodedBatch.byteLength,
+      msgpack: msgpackEncodedBatch.byteLength,
       json: jsonEncodedBatch.byteLength,
     },
   ];
 
   for (const row of sizeRows) {
-    const reduction = row.json > 0 ? (1 - row.gowe / row.json) * 100 : 0;
-    sizeTable.push([
+    const tableRow = [
       row.payload,
       formatBytes(row.gowe),
-      formatBytes(row.json),
-      row.json > 0 ? formatPercent(reduction) : "n/a",
-    ]);
+      formatBytes(row.msgpack),
+    ];
+
+    if (includeJsonBaseline) {
+      tableRow.push(formatBytes(row.json));
+    }
+
+    tableRow.push(formatReduction(row.gowe, row.msgpack));
+
+    if (includeJsonBaseline) {
+      tableRow.push(formatReduction(row.gowe, row.json));
+    }
+
+    sizeTable.push(tableRow);
   }
 
   const fastestHz = bench.tasks.reduce((maxHz, task) => {
@@ -452,6 +533,9 @@ async function run(): Promise<void> {
   console.log(`runtime: ${runtime}`);
   console.log(`backend preference: ${options.backend}`);
   console.log(`mode: ${options.mode}`);
+  console.log(
+    `baseline view: ${includeJsonBaseline ? "gowe, msgpack, json" : "gowe, msgpack"}`,
+  );
   console.log(`time per task: ${options.timeMs} ms`);
   console.log(`warmup per task: ${options.warmupMs} ms`);
   console.log("");
