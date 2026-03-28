@@ -25,8 +25,8 @@ import {
   toCompactJsonBatch,
   toTransportJson,
   toTransportJsonBatch,
-  type GoweValue,
-} from "gowe";
+  type RecurramValue,
+} from "recurram";
 
 type BackendKind = "napi" | "wasm";
 type BenchMode = "full" | "max";
@@ -36,7 +36,7 @@ interface CliOptions {
   timeMs: number;
   warmupMs: number;
   mode: BenchMode;
-  goweVsMsgpackOnly: boolean;
+  recurramVsMsgpackOnly: boolean;
 }
 
 function parseCliOptions(argv: string[]): CliOptions {
@@ -45,7 +45,7 @@ function parseCliOptions(argv: string[]): CliOptions {
     timeMs: 1000,
     warmupMs: 250,
     mode: "full",
-    goweVsMsgpackOnly: false,
+    recurramVsMsgpackOnly: false,
   };
 
   const options = { ...defaults };
@@ -88,8 +88,8 @@ function parseCliOptions(argv: string[]): CliOptions {
       continue;
     }
 
-    if (arg === "--gowe-vs-msgpack-only") {
-      options.goweVsMsgpackOnly = true;
+    if (arg === "--recurram-vs-msgpack-only") {
+      options.recurramVsMsgpackOnly = true;
     }
   }
 
@@ -140,9 +140,9 @@ function toJsonBytes(value: unknown): Uint8Array {
 async function run(): Promise<void> {
   const options = parseCliOptions(process.argv.slice(2));
   const runtime = await init({ prefer: options.backend });
-  const includeJsonBaseline = !options.goweVsMsgpackOnly;
+  const includeJsonBaseline = !options.recurramVsMsgpackOnly;
 
-  const singleRecord: GoweValue = {
+  const singleRecord: RecurramValue = {
     id: 1234,
     userId: 987654,
     name: "alice",
@@ -170,31 +170,34 @@ async function run(): Promise<void> {
     },
   };
 
-  const batchRecords: GoweValue[] = Array.from({ length: 256 }, (_, index) => {
-    const id = index + 1;
-    return {
-      id,
-      userId: 100000 + id,
-      active: id % 2 === 0,
-      tier: id % 3 === 0 ? "gold" : "standard",
-      country: id % 5 === 0 ? "US" : "JP",
-      usage: {
-        requests: 5000 + id,
-        errors: id % 17,
-      },
-    };
-  });
+  const batchRecords: RecurramValue[] = Array.from(
+    { length: 256 },
+    (_, index) => {
+      const id = index + 1;
+      return {
+        id,
+        userId: 100000 + id,
+        active: id % 2 === 0,
+        tier: id % 3 === 0 ? "gold" : "standard",
+        country: id % 5 === 0 ? "US" : "JP",
+        usage: {
+          requests: 5000 + id,
+          errors: id % 17,
+        },
+      };
+    },
+  );
 
   const batchRecordsJson = batchRecords as unknown[];
 
-  const goweEncodedSingle = encode(singleRecord);
-  const goweEncodedBatch = encodeBatch(batchRecords);
-  const goweEncodedSingles = batchRecords.map((value) => encode(value));
-  const goweTransportSingle = toTransportJson(singleRecord);
-  const goweTransportBatch = toTransportJsonBatch(batchRecords);
-  const goweCompactSingle = toCompactJson(singleRecord);
-  const goweCompactBatch = toCompactJsonBatch(batchRecords);
-  const goweEncodedSingleRaw = encodeTransportJson(goweTransportSingle);
+  const recurramEncodedSingle = encode(singleRecord);
+  const recurramEncodedBatch = encodeBatch(batchRecords);
+  const recurramEncodedSingles = batchRecords.map((value) => encode(value));
+  const recurramTransportSingle = toTransportJson(singleRecord);
+  const recurramTransportBatch = toTransportJsonBatch(batchRecords);
+  const recurramCompactSingle = toCompactJson(singleRecord);
+  const recurramCompactBatch = toCompactJsonBatch(batchRecords);
+  const recurramEncodedSingleRaw = encodeTransportJson(recurramTransportSingle);
   const jsonEncodedSingle = toJsonBytes(singleRecordJson);
   const jsonEncodedBatch = toJsonBytes(batchRecordsJson);
   const msgpackEncodedSingle = encodeMsgpack(singleRecordJson);
@@ -215,7 +218,7 @@ async function run(): Promise<void> {
     enableStatePatch: true,
     enableTemplateBatch: true,
   });
-  rawSessionEncoder.encodeTransportJson(goweTransportSingle);
+  rawSessionEncoder.encodeTransportJson(recurramTransportSingle);
 
   const directSessionEncoder = createSessionEncoder({
     enableStatePatch: true,
@@ -229,7 +232,7 @@ async function run(): Promise<void> {
   });
   compactSessionEncoder.encodeCompact(singleRecord);
 
-  const patchA: GoweValue = {
+  const patchA: RecurramValue = {
     ...singleRecord,
     score: 99.1,
     profile: {
@@ -239,7 +242,7 @@ async function run(): Promise<void> {
     },
   };
 
-  const patchB: GoweValue = {
+  const patchB: RecurramValue = {
     ...singleRecord,
     score: 98.1,
     profile: {
@@ -267,26 +270,26 @@ async function run(): Promise<void> {
 
   if (options.mode === "max") {
     bench
-      .add("gowe encode single (direct)", () => {
+      .add("recurram encode single (direct)", () => {
         encodeDirect(singleRecord);
       })
-      .add("gowe encode single (raw json)", () => {
-        encodeTransportJson(goweTransportSingle);
+      .add("recurram encode single (raw json)", () => {
+        encodeTransportJson(recurramTransportSingle);
       })
-      .add("gowe encode single (compact)", () => {
+      .add("recurram encode single (compact)", () => {
         encodeCompact(singleRecord);
       })
-      .add("gowe encode single (compact raw)", () => {
-        encodeCompactJson(goweCompactSingle);
+      .add("recurram encode single (compact raw)", () => {
+        encodeCompactJson(recurramCompactSingle);
       })
-      .add("gowe decode single (direct)", () => {
-        decodeDirect(goweEncodedSingleRaw);
+      .add("recurram decode single (direct)", () => {
+        decodeDirect(recurramEncodedSingleRaw);
       })
-      .add("gowe decode single (raw json)", () => {
-        decodeToTransportJson(goweEncodedSingleRaw);
+      .add("recurram decode single (raw json)", () => {
+        decodeToTransportJson(recurramEncodedSingleRaw);
       })
-      .add("gowe decode single (compact raw)", () => {
-        decodeToCompactJson(goweEncodedSingleRaw);
+      .add("recurram decode single (compact raw)", () => {
+        decodeToCompactJson(recurramEncodedSingleRaw);
       })
       .add("msgpack encode single", () => {
         encodeMsgpack(singleRecordJson);
@@ -294,17 +297,17 @@ async function run(): Promise<void> {
       .add("msgpack decode single", () => {
         decodeMsgpack(msgpackEncodedSingle);
       })
-      .add("gowe encode batch256 (direct)", () => {
+      .add("recurram encode batch256 (direct)", () => {
         encodeBatchDirect(batchRecords);
       })
-      .add("gowe encode batch256 (raw json)", () => {
-        encodeBatchTransportJson(goweTransportBatch);
+      .add("recurram encode batch256 (raw json)", () => {
+        encodeBatchTransportJson(recurramTransportBatch);
       })
-      .add("gowe encode batch256 (compact)", () => {
+      .add("recurram encode batch256 (compact)", () => {
         encodeBatchCompact(batchRecords);
       })
-      .add("gowe encode batch256 (compact raw)", () => {
-        encodeBatchCompactJson(goweCompactBatch);
+      .add("recurram encode batch256 (compact raw)", () => {
+        encodeBatchCompactJson(recurramCompactBatch);
       })
       .add("msgpack encode batch256", () => {
         encodeMsgpack(batchRecordsJson);
@@ -314,25 +317,25 @@ async function run(): Promise<void> {
           decodeMsgpack(encoded);
         }
       })
-      .add("gowe patch session (direct)", () => {
+      .add("recurram patch session (direct)", () => {
         patchFlipDirect = !patchFlipDirect;
         directSessionEncoder.encodePatchDirect(
           patchFlipDirect ? patchA : patchB,
         );
       })
-      .add("gowe patch session (raw json)", () => {
+      .add("recurram patch session (raw json)", () => {
         patchFlipRaw = !patchFlipRaw;
         rawSessionEncoder.encodePatchTransportJson(
           patchFlipRaw ? patchATransport : patchBTransport,
         );
       })
-      .add("gowe patch session (compact)", () => {
+      .add("recurram patch session (compact)", () => {
         patchFlipCompact = !patchFlipCompact;
         compactSessionEncoder.encodePatchCompact(
           patchFlipCompact ? patchA : patchB,
         );
       })
-      .add("gowe patch session (compact raw)", () => {
+      .add("recurram patch session (compact raw)", () => {
         patchFlipCompactRaw = !patchFlipCompactRaw;
         compactSessionEncoder.encodePatchCompactJson(
           patchFlipCompactRaw ? patchACompact : patchBCompact,
@@ -340,32 +343,32 @@ async function run(): Promise<void> {
       });
   } else {
     bench
-      .add("gowe encode single", () => {
+      .add("recurram encode single", () => {
         encode(singleRecord);
       })
-      .add("gowe encode single (direct)", () => {
+      .add("recurram encode single (direct)", () => {
         encodeDirect(singleRecord);
       })
-      .add("gowe encode single (raw json)", () => {
-        encodeTransportJson(goweTransportSingle);
+      .add("recurram encode single (raw json)", () => {
+        encodeTransportJson(recurramTransportSingle);
       })
-      .add("gowe encode single (compact)", () => {
+      .add("recurram encode single (compact)", () => {
         encodeCompact(singleRecord);
       })
-      .add("gowe encode single (compact raw)", () => {
-        encodeCompactJson(goweCompactSingle);
+      .add("recurram encode single (compact raw)", () => {
+        encodeCompactJson(recurramCompactSingle);
       })
-      .add("gowe decode single", () => {
-        decode(goweEncodedSingle);
+      .add("recurram decode single", () => {
+        decode(recurramEncodedSingle);
       })
-      .add("gowe decode single (direct)", () => {
-        decodeDirect(goweEncodedSingleRaw);
+      .add("recurram decode single (direct)", () => {
+        decodeDirect(recurramEncodedSingleRaw);
       })
-      .add("gowe decode single (raw json)", () => {
-        decodeToTransportJson(goweEncodedSingleRaw);
+      .add("recurram decode single (raw json)", () => {
+        decodeToTransportJson(recurramEncodedSingleRaw);
       })
-      .add("gowe decode single (compact raw)", () => {
-        decodeToCompactJson(goweEncodedSingleRaw);
+      .add("recurram decode single (compact raw)", () => {
+        decodeToCompactJson(recurramEncodedSingleRaw);
       })
       .add("msgpack encode single", () => {
         encodeMsgpack(singleRecordJson);
@@ -373,23 +376,23 @@ async function run(): Promise<void> {
       .add("msgpack decode single", () => {
         decodeMsgpack(msgpackEncodedSingle);
       })
-      .add("gowe encode batch256", () => {
+      .add("recurram encode batch256", () => {
         encodeBatch(batchRecords);
       })
-      .add("gowe encode batch256 (direct)", () => {
+      .add("recurram encode batch256 (direct)", () => {
         encodeBatchDirect(batchRecords);
       })
-      .add("gowe encode batch256 (raw json)", () => {
-        encodeBatchTransportJson(goweTransportBatch);
+      .add("recurram encode batch256 (raw json)", () => {
+        encodeBatchTransportJson(recurramTransportBatch);
       })
-      .add("gowe encode batch256 (compact)", () => {
+      .add("recurram encode batch256 (compact)", () => {
         encodeBatchCompact(batchRecords);
       })
-      .add("gowe encode batch256 (compact raw)", () => {
-        encodeBatchCompactJson(goweCompactBatch);
+      .add("recurram encode batch256 (compact raw)", () => {
+        encodeBatchCompactJson(recurramCompactBatch);
       })
-      .add("gowe decode 256 singles", () => {
-        for (const encoded of goweEncodedSingles) {
+      .add("recurram decode 256 singles", () => {
+        for (const encoded of recurramEncodedSingles) {
           decode(encoded);
         }
       })
@@ -401,29 +404,29 @@ async function run(): Promise<void> {
           decodeMsgpack(encoded);
         }
       })
-      .add("gowe patch session", () => {
+      .add("recurram patch session", () => {
         patchFlip = !patchFlip;
         sessionEncoder.encodePatch(patchFlip ? patchA : patchB);
       })
-      .add("gowe patch session (direct)", () => {
+      .add("recurram patch session (direct)", () => {
         patchFlipDirect = !patchFlipDirect;
         directSessionEncoder.encodePatchDirect(
           patchFlipDirect ? patchA : patchB,
         );
       })
-      .add("gowe patch session (raw json)", () => {
+      .add("recurram patch session (raw json)", () => {
         patchFlipRaw = !patchFlipRaw;
         rawSessionEncoder.encodePatchTransportJson(
           patchFlipRaw ? patchATransport : patchBTransport,
         );
       })
-      .add("gowe patch session (compact)", () => {
+      .add("recurram patch session (compact)", () => {
         patchFlipCompact = !patchFlipCompact;
         compactSessionEncoder.encodePatchCompact(
           patchFlipCompact ? patchA : patchB,
         );
       })
-      .add("gowe patch session (compact raw)", () => {
+      .add("recurram patch session (compact raw)", () => {
         patchFlipCompactRaw = !patchFlipCompactRaw;
         compactSessionEncoder.encodePatchCompactJson(
           patchFlipCompactRaw ? patchACompact : patchBCompact,
@@ -449,7 +452,7 @@ async function run(): Promise<void> {
 
   await bench.run();
 
-  const sizeTableHead = ["payload", "gowe (bytes)", "msgpack (bytes)"];
+  const sizeTableHead = ["payload", "recurram (bytes)", "msgpack (bytes)"];
 
   if (includeJsonBaseline) {
     sizeTableHead.push("json (bytes)");
@@ -469,13 +472,13 @@ async function run(): Promise<void> {
   const sizeRows = [
     {
       payload: "single",
-      gowe: goweEncodedSingle.byteLength,
+      recurram: recurramEncodedSingle.byteLength,
       msgpack: msgpackEncodedSingle.byteLength,
       json: jsonEncodedSingle.byteLength,
     },
     {
       payload: "batch(256)",
-      gowe: goweEncodedBatch.byteLength,
+      recurram: recurramEncodedBatch.byteLength,
       msgpack: msgpackEncodedBatch.byteLength,
       json: jsonEncodedBatch.byteLength,
     },
@@ -484,7 +487,7 @@ async function run(): Promise<void> {
   for (const row of sizeRows) {
     const tableRow = [
       row.payload,
-      formatBytes(row.gowe),
+      formatBytes(row.recurram),
       formatBytes(row.msgpack),
     ];
 
@@ -492,10 +495,10 @@ async function run(): Promise<void> {
       tableRow.push(formatBytes(row.json));
     }
 
-    tableRow.push(formatReduction(row.gowe, row.msgpack));
+    tableRow.push(formatReduction(row.recurram, row.msgpack));
 
     if (includeJsonBaseline) {
-      tableRow.push(formatReduction(row.gowe, row.json));
+      tableRow.push(formatReduction(row.recurram, row.json));
     }
 
     sizeTable.push(tableRow);
@@ -529,12 +532,12 @@ async function run(): Promise<void> {
     ]);
   }
 
-  console.log("Gowe benchmark");
+  console.log("Recurram benchmark");
   console.log(`runtime: ${runtime}`);
   console.log(`backend preference: ${options.backend}`);
   console.log(`mode: ${options.mode}`);
   console.log(
-    `baseline view: ${includeJsonBaseline ? "gowe, msgpack, json" : "gowe, msgpack"}`,
+    `baseline view: ${includeJsonBaseline ? "recurram, msgpack, json" : "recurram, msgpack"}`,
   );
   console.log(`time per task: ${options.timeMs} ms`);
   console.log(`warmup per task: ${options.warmupMs} ms`);

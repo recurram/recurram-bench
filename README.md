@@ -1,6 +1,6 @@
-# Gowe Benchmark
+# Recurram Benchmark
 
-TypeScript benchmark harness for `gowe` (`gowe-js` local package).
+TypeScript benchmark harness for `recurram` (`recurram-js` local package).
 
 ## Setup
 
@@ -8,10 +8,10 @@ TypeScript benchmark harness for `gowe` (`gowe-js` local package).
 pnpm install
 ```
 
-`gowe` is consumed from `../gowe-js` via a local file dependency. If the native/WASM artifacts are stale, rebuild `gowe-js` first:
+`recurram` is consumed from `../recurram-js` via a local file dependency. If the native/WASM artifacts are stale, rebuild `recurram-js` first:
 
 ```bash
-pnpm --dir ../gowe-js build
+pnpm --dir ../recurram-js build
 ```
 
 ## Run benchmark
@@ -28,26 +28,26 @@ Optional flags:
 - `--time-ms <number>` (default: `1000`)
 - `--warmup-ms <number>` (default: `250`)
 - `--mode full|max` (default: `full`)
-- `--gowe-vs-msgpack-only` (hide JSON rows and JSON benchmark tasks)
+- `--recurram-vs-msgpack-only` (hide JSON rows and JSON benchmark tasks)
 
 Examples:
 
 ```bash
 pnpm bench -- --backend napi
-pnpm bench -- --gowe-vs-msgpack-only
+pnpm bench -- --recurram-vs-msgpack-only
 pnpm bench -- --mode max --backend napi
 pnpm bench -- --backend wasm --time-ms 2000 --warmup-ms 500
 ```
 
 ## What is measured
 
-- Gowe encode/decode for a single record
-- Gowe encode/decode for a 256-record batch
+- Recurram encode/decode for a single record
+- Recurram encode/decode for a 256-record batch
 - MessagePack encode/decode baselines for single and batched payloads
-- Gowe session patch encode (`encodePatch`)
+- Recurram session patch encode (`encodePatch`)
 - Raw transport-json fast path (`encodeTransportJson`, `encodeBatchTransportJson`, `decodeToTransportJson`)
 - JSON stringify/parse baseline for a comparable payload
-- Encoded payload size comparison (`gowe` vs MessagePack vs JSON)
+- Encoded payload size comparison (`recurram` vs MessagePack vs JSON)
 - Pretty CLI tables for size and throughput output (`cli-table3`)
 
 ## Max speed tips
