@@ -1,0 +1,98 @@
+name: Benchmark
+
+on:
+  workflow_dispatch:
+    inputs:
+      backend:
+        description: "N-API or WASM"
+        type: choice
+        options:
+          - napi
+          - wasm
+        default: napi
+      mode:
+        description: "Benchmark suite"
+        type: choice
+        options:
+          - full
+          - max
+        default: full
+      recurram_vs_msgpack_only:
+        description: "Omit JSON baseline rows and tasks"
+        type: boolean
+        default: false
+      time_ms:
+        description: "Time per task (ms)"
+        type: string
+        default: "1000"
+      warmup_ms:
+        description: "Warmup per task (ms)"
+        type: string
+        default: "250"
+
+concurrency:
+  group: bench-${{ github.repository }}
+  cancel-in-progress: true
+
+jobs:
+  bench:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout recurram-bench
+        uses: actions/checkout@v4
+        with:
+          path: workspace/recurram-bench
+
+      - name: Checkout recurram-js
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/recurram-js
+          path: workspace/recurram-js
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.18.1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: |
+            workspace/recurram-js/pnpm-lock.yaml
+            workspace/recurram-bench/pnpm-lock.yaml
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+      - name: Build recurram-js
+        working-directory: workspace/recurram-js
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+
+      - name: Install bench dependencies
+        working-directory: workspace/recurram-bench
+        run: pnpm install --frozen-lockfile
+
+      - name: Run benchmark
+        working-directory: workspace/recurram-bench
+        run: |
+          set -euo pipefail
+          extra=()
+          if [ "${{ inputs.recurram_vs_msgpack_only }}" = "true" ]; then
+            extra+=(--recurram-vs-msgpack-only)
+          fi
+          pnpm exec tsx src/benchmark.ts \
+            --markdown-out "${GITHUB_STEP_SUMMARY}" \
+            --backend "${{ inputs.backend }}" \
+            --mode "${{ inputs.mode }}" \
+            --time-ms "${{ inputs.time_ms }}" \
+            --warmup-ms "${{ inputs.warmup_ms }}" \
+            "${extra[@]}"

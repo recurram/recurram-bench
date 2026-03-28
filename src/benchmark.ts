@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import { Bench } from "tinybench";
 import Table from "cli-table3";
 import {
@@ -37,6 +38,7 @@ interface CliOptions {
   warmupMs: number;
   mode: BenchMode;
   recurramVsMsgpackOnly: boolean;
+  markdownOut: string | null;
 }
 
 function parseCliOptions(argv: string[]): CliOptions {
@@ -46,6 +48,7 @@ function parseCliOptions(argv: string[]): CliOptions {
     warmupMs: 250,
     mode: "full",
     recurramVsMsgpackOnly: false,
+    markdownOut: null,
   };
 
   const options = { ...defaults };
@@ -91,6 +94,11 @@ function parseCliOptions(argv: string[]): CliOptions {
     if (arg === "--recurram-vs-msgpack-only") {
       options.recurramVsMsgpackOnly = true;
     }
+
+    if (arg === "--markdown-out" && argv[i + 1]) {
+      options.markdownOut = argv[i + 1];
+      i += 1;
+    }
   }
 
   return options;
@@ -131,6 +139,98 @@ function formatRelativeSpeed(hz: number, fastestHz: number): string {
   }
 
   return `${(hz / fastestHz).toFixed(2)}x`;
+}
+
+function escapeMarkdownCell(value: string): string {
+  return value.replace(/\|/g, "\\|").replace(/\r?\n/g, " ");
+}
+
+interface SizeRowData {
+  payload: string;
+  recurram: number;
+  msgpack: number;
+  json: number;
+}
+
+function buildMarkdownReport(params: {
+  runtime: string;
+  options: CliOptions;
+  includeJsonBaseline: boolean;
+  sizeRows: SizeRowData[];
+  sortedTasks: { name: string; result?: { hz?: number; rme?: number } }[];
+  fastestHz: number;
+}): string {
+  const {
+    runtime,
+    options,
+    includeJsonBaseline,
+    sizeRows,
+    sortedTasks,
+    fastestHz,
+  } = params;
+
+  const lines: string[] = [
+    "## Recurram benchmark",
+    "",
+    `- **Runtime:** ${runtime}`,
+    `- **Backend preference:** ${options.backend}`,
+    `- **Mode:** ${options.mode}`,
+    `- **Baselines:** ${includeJsonBaseline ? "recurram, msgpack, json" : "recurram, msgpack"}`,
+    `- **Time per task:** ${options.timeMs} ms`,
+    `- **Warmup per task:** ${options.warmupMs} ms`,
+    "",
+    "### Encoded size comparison",
+    "",
+  ];
+
+  const sizeHead = ["payload", "recurram (bytes)", "msgpack (bytes)"];
+  if (includeJsonBaseline) {
+    sizeHead.push("json (bytes)");
+  }
+  sizeHead.push("vs msgpack");
+  if (includeJsonBaseline) {
+    sizeHead.push("vs json");
+  }
+  lines.push("| " + sizeHead.join(" | ") + " |");
+  lines.push("| " + sizeHead.map(() => "---").join(" | ") + " |");
+
+  for (const row of sizeRows) {
+    const cells = [
+      escapeMarkdownCell(row.payload),
+      formatBytes(row.recurram),
+      formatBytes(row.msgpack),
+    ];
+    if (includeJsonBaseline) {
+      cells.push(formatBytes(row.json));
+    }
+    cells.push(formatReduction(row.recurram, row.msgpack));
+    if (includeJsonBaseline) {
+      cells.push(formatReduction(row.recurram, row.json));
+    }
+    lines.push("| " + cells.join(" | ") + " |");
+  }
+
+  lines.push("", "### Throughput (sorted by ops/s)", "", "");
+  lines.push("| task | ops/s | ns/op | relative | rme |");
+  lines.push("| --- | ---: | ---: | ---: | ---: |");
+
+  for (const task of sortedTasks) {
+    const hzI = task.result?.hz ?? 0;
+    const rme = task.result?.rme;
+    lines.push(
+      "| " +
+        [
+          escapeMarkdownCell(task.name),
+          formatOps(hzI),
+          formatNsPerOp(hzI),
+          formatRelativeSpeed(hzI, fastestHz),
+          typeof rme === "number" ? formatPercent(rme) : "n/a",
+        ].join(" | ") +
+        " |",
+    );
+  }
+
+  return lines.join("\n");
 }
 
 function toJsonBytes(value: unknown): Uint8Array {
@@ -547,6 +647,18 @@ async function run(): Promise<void> {
   console.log("");
   console.log("results");
   console.log(resultTable.toString());
+
+  if (options.markdownOut) {
+    const md = buildMarkdownReport({
+      runtime,
+      options,
+      includeJsonBaseline,
+      sizeRows,
+      sortedTasks,
+      fastestHz,
+    });
+    fs.appendFileSync(options.markdownOut, `${md}\n\n`);
+  }
 }
 
 void run();
