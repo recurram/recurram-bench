@@ -5,6 +5,11 @@ import {
   decode as decodeMsgpack,
   encode as encodeMsgpack,
 } from "@msgpack/msgpack";
+import { decode as decodeCbor, encode as encodeCbor } from "cbor-x";
+import {
+  deserialize as deserializeBson,
+  serialize as serializeBson,
+} from "bson";
 import {
   createSessionEncoder,
   decode,
@@ -149,6 +154,8 @@ interface SizeRowData {
   payload: string;
   recurram: number;
   msgpack: number;
+  cbor: number;
+  bson: number;
   json: number;
 }
 
@@ -183,11 +190,17 @@ function buildMarkdownReport(params: {
     "",
   ];
 
-  const sizeHead = ["payload", "recurram (bytes)", "msgpack (bytes)"];
+  const sizeHead = [
+    "payload",
+    "recurram (bytes)",
+    "msgpack (bytes)",
+    "cbor (bytes)",
+    "bson (bytes)",
+  ];
   if (includeJsonBaseline) {
     sizeHead.push("json (bytes)");
   }
-  sizeHead.push("vs msgpack");
+  sizeHead.push("vs msgpack", "vs cbor", "vs bson");
   if (includeJsonBaseline) {
     sizeHead.push("vs json");
   }
@@ -199,11 +212,17 @@ function buildMarkdownReport(params: {
       escapeMarkdownCell(row.payload),
       formatBytes(row.recurram),
       formatBytes(row.msgpack),
+      formatBytes(row.cbor),
+      formatBytes(row.bson),
     ];
     if (includeJsonBaseline) {
       cells.push(formatBytes(row.json));
     }
-    cells.push(formatReduction(row.recurram, row.msgpack));
+    cells.push(
+      formatReduction(row.recurram, row.msgpack),
+      formatReduction(row.recurram, row.cbor),
+      formatReduction(row.recurram, row.bson),
+    );
     if (includeJsonBaseline) {
       cells.push(formatReduction(row.recurram, row.json));
     }
@@ -305,6 +324,16 @@ async function run(): Promise<void> {
   const msgpackEncodedSingles = batchRecordsJson.map((value) =>
     encodeMsgpack(value),
   );
+  const cborEncodedSingle = encodeCbor(singleRecordJson);
+  const cborEncodedBatch = encodeCbor(batchRecordsJson);
+  const cborEncodedSingles = batchRecordsJson.map((value) => encodeCbor(value));
+  const bsonEncodedSingle = serializeBson(
+    singleRecordJson as Record<string, unknown>,
+  );
+  const bsonEncodedBatch = serializeBson({ records: batchRecordsJson });
+  const bsonEncodedSingles = batchRecordsJson.map((value) =>
+    serializeBson(value as Record<string, unknown>),
+  );
   const jsonSingleText = new TextDecoder().decode(jsonEncodedSingle);
   const jsonBatchText = new TextDecoder().decode(jsonEncodedBatch);
 
@@ -397,6 +426,18 @@ async function run(): Promise<void> {
       .add("msgpack decode single", () => {
         decodeMsgpack(msgpackEncodedSingle);
       })
+      .add("cbor encode single", () => {
+        encodeCbor(singleRecordJson);
+      })
+      .add("cbor decode single", () => {
+        decodeCbor(cborEncodedSingle);
+      })
+      .add("bson serialize single", () => {
+        serializeBson(singleRecordJson as Record<string, unknown>);
+      })
+      .add("bson deserialize single", () => {
+        deserializeBson(bsonEncodedSingle);
+      })
       .add("recurram encode batch256 (direct)", () => {
         encodeBatchDirect(batchRecords);
       })
@@ -415,6 +456,22 @@ async function run(): Promise<void> {
       .add("msgpack decode 256 singles", () => {
         for (const encoded of msgpackEncodedSingles) {
           decodeMsgpack(encoded);
+        }
+      })
+      .add("cbor encode batch256", () => {
+        encodeCbor(batchRecordsJson);
+      })
+      .add("cbor decode 256 singles", () => {
+        for (const encoded of cborEncodedSingles) {
+          decodeCbor(encoded);
+        }
+      })
+      .add("bson serialize batch256", () => {
+        serializeBson({ records: batchRecordsJson });
+      })
+      .add("bson deserialize 256 singles", () => {
+        for (const encoded of bsonEncodedSingles) {
+          deserializeBson(encoded);
         }
       })
       .add("recurram patch session (direct)", () => {
@@ -476,6 +533,18 @@ async function run(): Promise<void> {
       .add("msgpack decode single", () => {
         decodeMsgpack(msgpackEncodedSingle);
       })
+      .add("cbor encode single", () => {
+        encodeCbor(singleRecordJson);
+      })
+      .add("cbor decode single", () => {
+        decodeCbor(cborEncodedSingle);
+      })
+      .add("bson serialize single", () => {
+        serializeBson(singleRecordJson as Record<string, unknown>);
+      })
+      .add("bson deserialize single", () => {
+        deserializeBson(bsonEncodedSingle);
+      })
       .add("recurram encode batch256", () => {
         encodeBatch(batchRecords);
       })
@@ -502,6 +571,22 @@ async function run(): Promise<void> {
       .add("msgpack decode 256 singles", () => {
         for (const encoded of msgpackEncodedSingles) {
           decodeMsgpack(encoded);
+        }
+      })
+      .add("cbor encode batch256", () => {
+        encodeCbor(batchRecordsJson);
+      })
+      .add("cbor decode 256 singles", () => {
+        for (const encoded of cborEncodedSingles) {
+          decodeCbor(encoded);
+        }
+      })
+      .add("bson serialize batch256", () => {
+        serializeBson({ records: batchRecordsJson });
+      })
+      .add("bson deserialize 256 singles", () => {
+        for (const encoded of bsonEncodedSingles) {
+          deserializeBson(encoded);
         }
       })
       .add("recurram patch session", () => {
@@ -552,13 +637,19 @@ async function run(): Promise<void> {
 
   await bench.run();
 
-  const sizeTableHead = ["payload", "recurram (bytes)", "msgpack (bytes)"];
+  const sizeTableHead = [
+    "payload",
+    "recurram (bytes)",
+    "msgpack (bytes)",
+    "cbor (bytes)",
+    "bson (bytes)",
+  ];
 
   if (includeJsonBaseline) {
     sizeTableHead.push("json (bytes)");
   }
 
-  sizeTableHead.push("vs msgpack");
+  sizeTableHead.push("vs msgpack", "vs cbor", "vs bson");
 
   if (includeJsonBaseline) {
     sizeTableHead.push("vs json");
@@ -574,12 +665,16 @@ async function run(): Promise<void> {
       payload: "single",
       recurram: recurramEncodedSingle.byteLength,
       msgpack: msgpackEncodedSingle.byteLength,
+      cbor: cborEncodedSingle.byteLength,
+      bson: bsonEncodedSingle.byteLength,
       json: jsonEncodedSingle.byteLength,
     },
     {
       payload: "batch(256)",
       recurram: recurramEncodedBatch.byteLength,
       msgpack: msgpackEncodedBatch.byteLength,
+      cbor: cborEncodedBatch.byteLength,
+      bson: bsonEncodedBatch.byteLength,
       json: jsonEncodedBatch.byteLength,
     },
   ];
@@ -589,13 +684,19 @@ async function run(): Promise<void> {
       row.payload,
       formatBytes(row.recurram),
       formatBytes(row.msgpack),
+      formatBytes(row.cbor),
+      formatBytes(row.bson),
     ];
 
     if (includeJsonBaseline) {
       tableRow.push(formatBytes(row.json));
     }
 
-    tableRow.push(formatReduction(row.recurram, row.msgpack));
+    tableRow.push(
+      formatReduction(row.recurram, row.msgpack),
+      formatReduction(row.recurram, row.cbor),
+      formatReduction(row.recurram, row.bson),
+    );
 
     if (includeJsonBaseline) {
       tableRow.push(formatReduction(row.recurram, row.json));
