@@ -51,6 +51,12 @@ jobs:
           repository: ${{ github.repository_owner }}/recurram-js
           path: workspace/recurram-js
 
+      - name: Checkout recurram-rust
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/recurram-rust
+          path: workspace/recurram-rust
+
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
